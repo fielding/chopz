@@ -59,6 +59,11 @@ function saveLinks(file, state) {
 // Make `p` a symlink to `target`, replacing whatever is there. Returns
 // "unchanged" if it already points at target, else "linked".
 export function ensureSymlink(target, p) {
+  // Never symlink a path to itself. Without this guard, linking a skill whose
+  // deploy location IS its own source (which happens if the source repo is
+  // mistaken for a deploy dir) would rm the source and self-loop it, destroying
+  // the skill. This is the last line of defense; callers also exclude the source.
+  if (path.resolve(target) === path.resolve(p)) return "unchanged";
   const t = pathType(p);
   if (t === "symlink" && safeReadlink(p) === target) return "unchanged";
   if (t === "dir") rmSync(p, { recursive: true, force: true });
@@ -94,16 +99,24 @@ export async function link(ctx, repoPath) {
     return 1;
   }
 
+  const repo = path.resolve(repoPath);
+  // Deploy targets, never the source repo itself or anything inside it: a skill
+  // must never be linked over its own source (that is what destroyed a repo).
+  const deployLocations = () =>
+    deployDirs().filter((d) => {
+      const r = path.resolve(d);
+      return r !== repo && !r.startsWith(repo + path.sep);
+    });
+
   let state;
   let dirs;
   try {
     state = loadLinks(linksFile);
-    dirs = deployDirs();
+    dirs = deployLocations();
   } catch (e) {
     err(`chopz: ${e.message}`);
     return 1;
   }
-  const repo = path.resolve(repoPath);
 
   for (const { name, dir } of skills) {
     // Link the skill in every place it is already deployed (store + each agent
@@ -115,7 +128,7 @@ export async function link(ctx, repoPath) {
       out(`chopz: ${name} not installed yet; installing once so it can be linked.`);
       try {
         await installCopy(repo, name);
-        dirs = deployDirs();
+        dirs = deployLocations();
       } catch (e) {
         err(`chopz: could not install ${name} to link it: ${e.message}`);
         return 1;

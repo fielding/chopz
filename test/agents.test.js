@@ -89,6 +89,10 @@ test("discoverAgentSkillDirs finds agent dirs holding a known skill, one and two
     mkdirSync(path.join(home, "project/skills/unrelated"), { recursive: true });
     // a deeper-than-scanned mirror -> not found (documents the bound)
     mkdirSync(path.join(home, "a/b/c/skills/alpha"), { recursive: true });
+    // a SOURCE repo: a non-hidden 'skills' dir full of known skills. Must NOT be
+    // discovered as an agent dir (agent config lives in dotdirs). This is the
+    // data-loss regression: linking it once self-destructed it.
+    mkdirSync(path.join(home, "src/hack/skills/alpha"), { recursive: true });
 
     const dirs = discoverAgentSkillDirs(home, ["alpha", "beta"]);
     assert.deepEqual(dirs, [

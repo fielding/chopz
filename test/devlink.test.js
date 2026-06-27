@@ -85,6 +85,45 @@ test("ensureSymlink replaces a copy dir with a symlink, and is idempotent", () =
   }
 });
 
+test("ensureSymlink refuses to link a path to itself and never deletes it", () => {
+  const root = tmp();
+  try {
+    const dir = path.join(root, "gate");
+    mkdirSync(dir);
+    writeFileSync(path.join(dir, "SKILL.md"), "real content");
+    // self-link: target === p. Must be a no-op, NOT an rm-then-self-symlink.
+    assert.equal(ensureSymlink(dir, dir), "unchanged");
+    assert.equal(pathType(dir), "dir");
+    assert.equal(readFileSync(path.join(dir, "SKILL.md"), "utf8"), "real content");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("link never deploys into the source repo even if it is discovered as a deploy dir", async () => {
+  const w = world(["alpha", "beta"], ["claude"]);
+  try {
+    // The data-loss condition: the source repo itself shows up in deployDirs
+    // (it is a dir full of skills). The fix must exclude it.
+    w.ctx.deployDirs = () => [w.store, ...w.agents, w.repo];
+    const code = await link(w.ctx, w.repo);
+    assert.equal(code, 0);
+    for (const name of ["alpha", "beta"]) {
+      const src = path.join(w.repo, name);
+      assert.equal(lstatSync(src).isSymbolicLink(), false, `${name} source must stay a real dir`);
+      assert.match(readFileSync(path.join(src, "SKILL.md"), "utf8"), /source body/);
+    }
+    const rec = loadLinks(w.linksFile).links;
+    for (const name of ["alpha", "beta"]) {
+      for (const p of rec[name].paths) {
+        assert.ok(!p.startsWith(w.repo + path.sep), `${name} must not record a source-repo path`);
+      }
+    }
+  } finally {
+    rmSync(w.root, { recursive: true, force: true });
+  }
+});
+
 test("link symlinks every deployment (+ store) to the live source and records it", async () => {
   const w = world(["alpha", "beta"], ["claude", "codex"]);
   try {

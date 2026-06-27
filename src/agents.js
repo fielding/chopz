@@ -119,6 +119,11 @@ export function discoverAgentSkillDirs(homeDir, knownSkills, { readdir = readDir
 
   for (const top of readDirEntries(homeDir)) {
     if (!top.isDirectory()) continue;
+    // Agent config lives in hidden dirs (~/.claude, ~/.codex, ~/.config/<x>,
+    // ~/.agents). Restricting to dotdirs keeps a source repo like
+    // ~/src/hack/skills, which is also a "skills" dir full of known skills, from
+    // being mistaken for a deploy target (which once made `link` self-destruct it).
+    if (!top.name.startsWith(".")) continue;
     const base = path.join(homeDir, top.name);
     consider(path.join(base, "skills"));
     for (const sub of readDirEntries(base)) {
