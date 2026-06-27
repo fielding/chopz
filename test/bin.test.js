@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -10,10 +10,11 @@ const BIN = fileURLToPath(new URL("../bin/chopz.js", import.meta.url));
 
 // Run the real CLI as a subprocess (bin/chopz.js calls process.exit, so it has
 // to be exercised out of process). Returns { code, stdout, stderr }.
-function run(args, { home, manifest } = {}) {
+function run(args, { home, manifest, pathPrepend } = {}) {
   const env = { ...process.env };
   if (home) env.HOME = home;
   if (manifest) env.CHOPZ_MANIFEST = manifest;
+  if (pathPrepend) env.PATH = `${pathPrepend}${path.delimiter}${env.PATH}`;
   const r = spawnSync("node", [BIN, ...args], { encoding: "utf8", env });
   return { code: r.status, stdout: r.stdout || "", stderr: r.stderr || "" };
 }
@@ -36,10 +37,28 @@ test("no arguments prints usage and exits 0", () => {
   assert.match(r.stdout, /Available:/);
 });
 
-test("an unknown command exits 1", () => {
-  const r = run(["frobnicate"]);
-  assert.equal(r.code, 1);
-  assert.match(r.stderr, /unknown command 'frobnicate'/);
+test("--version prints the package version", () => {
+  const r = run(["--version"]);
+  assert.equal(r.code, 0);
+  assert.match(r.stdout.trim(), /^\d+\.\d+\.\d+/);
+});
+
+test("a command chopz does not define is forwarded to skills", () => {
+  const home = tmpHome();
+  try {
+    // a fake `npx` on PATH that echoes its args, so we can see the forwarded command
+    const binDir = path.join(home, "fakebin");
+    mkdirSync(binDir);
+    const fakeNpx = path.join(binDir, "npx");
+    writeFileSync(fakeNpx, '#!/bin/sh\necho "FAKE-NPX $*"\nexit 0\n');
+    chmodSync(fakeNpx, 0o755);
+
+    const r = run(["find", "rust"], { home, pathPrepend: binDir });
+    assert.equal(r.code, 0);
+    assert.match(r.stdout, /FAKE-NPX skills find rust/);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
 });
 
 test("add without -s exits 1 with usage", () => {

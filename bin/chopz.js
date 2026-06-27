@@ -5,7 +5,8 @@
 // docs/THREAT-MODEL.md is the north star -- every command must respect it.
 
 import { homedir } from "node:os";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { resolveManifest } from "../src/manifest.js";
@@ -31,9 +32,24 @@ const IMPLEMENTED = {
   audit: "Report installed skills, sources, dev-linked state, and hash drift.",
 };
 
+const VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+
 // Pin an installed skill to a content hash chopz records (THREAT-MODEL #2).
 function pinOne(skill, source) {
   integrity.pin(pinsFile(), skill, path.join(storeDir(), skill), source);
+}
+
+// Forward a command chopz does not define straight to `skills`, so chopz is a
+// superset and you only need one CLI. Runs in your current directory (skills is
+// cwd-sensitive for project scope) with inherited stdio, and returns its exit
+// code. chopz's own verbs (list/add/install/...) take precedence.
+function passthrough(cmd, rest) {
+  const r = spawnSync("npx", ["skills", cmd, ...rest], { stdio: "inherit" });
+  if (r.error) {
+    console.error(`chopz: could not run skills: ${r.error.message}`);
+    return 1;
+  }
+  return r.status ?? 1;
 }
 
 // `chopz scan [skill|path]`: red-flag a skill's files. With no argument, scan
@@ -96,6 +112,8 @@ function usage() {
   for (const [name, desc] of Object.entries(IMPLEMENTED)) {
     console.log(`  ${name.padEnd(10)} ${desc}`);
   }
+  console.log("\nAny other command is forwarded to skills (e.g. chopz find, chopz use, chopz remove),");
+  console.log("so you only need one CLI. chopz's own verbs above take precedence.");
   console.log("\nSecurity model: docs/THREAT-MODEL.md (read before extending).");
 }
 
@@ -107,10 +125,15 @@ async function main(argv) {
     return 0;
   }
 
+  if (cmd === "-v" || cmd === "--version") {
+    console.log(VERSION);
+    return 0;
+  }
+
+  // Anything chopz does not define is a skills command: forward it, so you only
+  // need one CLI on your PATH.
   if (!(cmd in IMPLEMENTED)) {
-    console.error(`chopz: unknown command '${cmd}'\n`);
-    usage();
-    return 1;
+    return passthrough(cmd, rest);
   }
 
   // --- audit: read-only inventory + hash verification (no manifest needed) ---

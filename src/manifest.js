@@ -11,9 +11,10 @@ import path from "node:path";
 import { isSafeSkillName } from "./store.js";
 
 // Resolution order, first hit wins:
-//   1. $CHOPZ_MANIFEST              explicit override
-//   2. ./.chopz/bundles.json        repo-owned manifest (the documented path)
-//   3. ~/.agents/.skill-bundles.json legacy global path (bash prototype)
+//   1. $CHOPZ_MANIFEST                explicit override
+//   2. ./.chopz/bundles.json          a project's own bundles, when you're in one
+//   3. ~/.agents/.skill-bundles.json  your global bundles, next to the skill store
+//                                     and lock (the home for the common case)
 export function manifestPath(env = process.env, cwd = process.cwd()) {
   if (env.CHOPZ_MANIFEST) return env.CHOPZ_MANIFEST;
   const home = env.HOME || homedir();

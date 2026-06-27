@@ -95,10 +95,16 @@ chopz audit                Report installed skills, sources, dev-link state, and
 Deferred: an activation gate (`review`, hold a skill inactive until you approve it)
 needs a quarantine that fights how `skills` deploys. See the threat model.
 
-Bundles live in `.chopz/bundles.json` (a repo-owned allowlist). chopz reads that file,
-falls back to the legacy `~/.agents/.skill-bundles.json`, or whatever `$CHOPZ_MANIFEST`
-points at. The store it checks and installs into is `$SKILLS_DIR`, or `~/.agents/skills`
+Your bundles live in `~/.agents/.skill-bundles.json`, next to the skill store and lock,
+where the rest of your skill config already lives. A project can override that with its
+own `.chopz/bundles.json` when you are working inside it, or point `$CHOPZ_MANIFEST`
+anywhere. The store chopz checks and installs into is `$SKILLS_DIR`, or `~/.agents/skills`
 by default.
+
+chopz is a superset of `skills`: any command it does not define (`find`, `use`,
+`remove`, `update`, `init`, ...) is forwarded straight to `skills`, so you only need
+`chopz` on your PATH. Its own verbs above take precedence, and `chopz audit` is the
+richer "what do I have installed" than `skills list`.
 
 `add` installs a skill and auto-follows its `requires:`, but only for requires that
 live in that same repo, one you already trust by installing from it. A `requires:`
