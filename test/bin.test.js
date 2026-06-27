@@ -37,10 +37,23 @@ test("no arguments prints usage and exits 0", () => {
   assert.match(r.stdout, /Available:/);
 });
 
-test("--version prints the package version", () => {
-  const r = run(["--version"]);
-  assert.equal(r.code, 0);
-  assert.match(r.stdout.trim(), /^\d+\.\d+\.\d+/);
+test("--version reports both the chopz and the resolved skills version", () => {
+  const home = tmpHome();
+  try {
+    const binDir = path.join(home, "fakebin");
+    mkdirSync(binDir);
+    const fakeNpx = path.join(binDir, "npx");
+    // respond to `skills --version` with a version; echo otherwise
+    writeFileSync(fakeNpx, '#!/bin/sh\nif [ "$2" = "--version" ]; then echo "1.5.13"; exit 0; fi\necho "FAKE $*"\n');
+    chmodSync(fakeNpx, 0o755);
+
+    const r = run(["--version"], { home, pathPrepend: binDir });
+    assert.equal(r.code, 0);
+    assert.match(r.stdout, /chopz\s+\d+\.\d+\.\d+/);
+    assert.match(r.stdout, /skills\s+1\.5\.13/);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
 });
 
 test("a command chopz does not define is forwarded to skills", () => {

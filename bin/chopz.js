@@ -39,6 +39,26 @@ function pinOne(skill, source) {
   integrity.pin(pinsFile(), skill, path.join(storeDir(), skill), source);
 }
 
+// The version of `skills` that `npx skills` resolves on this machine, or null if
+// it cannot be determined. This is the skills chopz would actually shell out to.
+function skillsVersion() {
+  try {
+    const r = spawnSync("npx", ["skills", "--version"], { encoding: "utf8", timeout: 60000 });
+    const out = (r.stdout || "").replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;?]*[a-zA-Z]`, "g"), "");
+    const m = out.match(/\d+\.\d+\.\d+\S*/);
+    return r.status === 0 && m ? m[0] : null;
+  } catch {
+    return null;
+  }
+}
+
+function versionCommand() {
+  console.log(`chopz   ${VERSION}`);
+  const sv = skillsVersion();
+  console.log(sv ? `skills  ${sv}` : "skills  (not resolved; try: npx skills --version)");
+  return 0;
+}
+
 // Forward a command chopz does not define straight to `skills`, so chopz is a
 // superset and you only need one CLI. Runs in your current directory (skills is
 // cwd-sensitive for project scope) with inherited stdio, and returns its exit
@@ -126,8 +146,7 @@ async function main(argv) {
   }
 
   if (cmd === "-v" || cmd === "--version") {
-    console.log(VERSION);
-    return 0;
+    return versionCommand();
   }
 
   // Anything chopz does not define is a skills command: forward it, so you only
