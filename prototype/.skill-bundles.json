@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "bundles": {
+    "gate": {
+      "description": "The gate pre-submission pipeline and every skill it composes.",
+      "members": [
+        { "skill": "gate", "source": "fielding/skills" },
+        { "skill": "intent", "source": "fielding/skills" },
+        { "skill": "state-space-minimization", "source": "dkubb/skills" },
+        { "skill": "rust-conventions", "source": "fielding/skills" },
+        { "skill": "scrub-ai-tells", "source": "fielding/skills" },
+        { "skill": "review-crew", "source": "fielding/skills" },
+        { "skill": "atomic-changes", "source": "dkubb/skills" },
+        { "skill": "git-factor", "source": "dkubb/agent-skills" },
+        { "skill": "voice", "source": "fielding/skills" },
+        { "skill": "retro", "source": "fielding/skills" }
+      ]
+    }
+  }
+}

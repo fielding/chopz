@@ -1,0 +1,40 @@
+{
+  "name": "@fielding/chopz",
+  "version": "0.2.0",
+  "description": "A safety-first layer over the skills CLI: named bundles and safe same-repo dependency resolution for agent skills.",
+  "type": "module",
+  "bin": {
+    "chopz": "bin/chopz.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "lint": "biome lint .",
+    "lint:fix": "biome lint --write .",
+    "check": "biome lint . && node --test",
+    "chopz": "node ./bin/chopz.js"
+  },
+  "keywords": [
+    "agent-skills",
+    "skills",
+    "bundles",
+    "supply-chain",
+    "cli"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fielding/chopz.git"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.1"
+  }
+}

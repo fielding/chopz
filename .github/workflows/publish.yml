@@ -1,0 +1,33 @@
+name: publish
+
+# Publishes to npm when a GitHub Release is published. Bump the version in
+# package.json, push, then cut a release; this runs the gate (lint + tests) and
+# only publishes if they pass.
+#
+# Requires a repo secret NPM_TOKEN: an npm granular/automation token with
+# "publish" permission for @fielding/chopz and "bypass 2FA" enabled, since the
+# runner cannot answer a one-time-password prompt.
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # lets npm attach build provenance
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

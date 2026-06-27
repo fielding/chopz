@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# skill-bundle -- install/verify named groups of skills declaratively.
+#
+# A bundle is a hand-authored entry in .skill-bundles.json listing exact member
+# skills and their source repos. It is an explicit allowlist: there is no
+# transitive auto-discovery, so installing a bundle can only ever install skills
+# you have already enumerated. (Same-repo `requires:` auto-follow is a planned v2.)
+
+MANIFEST="$HOME/.agents/.skill-bundles.json"
+STORE="${SKILLS_DIR:-$HOME/.agents/skills}"
+
+command -v jq >/dev/null 2>&1 || { echo "skill-bundle: jq is required" >&2; exit 1; }
+[ -f "$MANIFEST" ] || { echo "skill-bundle: no manifest at $MANIFEST" >&2; exit 1; }
+
+usage() {
+  cat <<'EOF'
+Usage: skill-bundle <command> [bundle]
+
+  list                 List bundles and their members.
+  verify <bundle>      Check every member is installed in the store.
+                       Prints the exact install line for anything missing.
+                       Exits non-zero if any member is missing.
+  install <bundle>     Install every member globally (npx skills add ... -g -y),
+                       from each member's source repo. Idempotent.
+
+A bundle is defined in ~/.agents/.skill-bundles.json.
+EOF
+}
+
+# Confirm the bundle exists; print its members as "skill<TAB>source" lines.
+require_bundle() {
+  local b="$1"
+  if ! jq -e --arg b "$b" '.bundles | has($b)' "$MANIFEST" >/dev/null; then
+    echo "skill-bundle: unknown bundle '$b'. Available:" >&2
+    jq -r '.bundles | keys[]' "$MANIFEST" | sed 's/^/  /' >&2
+    exit 1
+  fi
+}
+members_of() {
+  jq -r --arg b "$1" '.bundles[$b].members[]? | "\(.skill)\t\(.source)"' "$MANIFEST"
+}
+
+cmd_list() {
+  jq -r '
+    .bundles | to_entries[] |
+    "\(.key)  --  \(.value.description)",
+    (.value.members[] | "    \(.skill)  [\(.source)]"),
+    ""
+  ' "$MANIFEST"
+}
+
+cmd_verify() {
+  local b="$1"; require_bundle "$b"
+  local missing=0
+  while IFS=$'\t' read -r skill source; do
+    [ -n "$skill" ] || continue
+    if [ -e "$STORE/$skill" ]; then
+      echo "  ok      $skill"
+    else
+      echo "  MISSING $skill   ->   npx skills add $source -s $skill -g -y"
+      missing=$((missing + 1))
+    fi
+  done < <(members_of "$b")
+  if [ "$missing" -gt 0 ]; then
+    echo "skill-bundle: $missing member(s) missing from bundle '$b'." >&2
+    return 1
+  fi
+  echo "skill-bundle: bundle '$b' fully installed."
+}
+
+cmd_install() {
+  local b="$1"; require_bundle "$b"
+  # Install from a neutral cwd ($HOME): running from ~/.agents nests a bogus
+  # ~/.agents/.agents/skills/ (project-scope). -g is global, one skill per call.
+  cd "$HOME"
+  while IFS=$'\t' read -r skill source; do
+    [ -n "$skill" ] || continue
+    echo "==> $skill ($source)"
+    npx skills add "$source" -s "$skill" -g -y
+  done < <(members_of "$b")
+  echo "skill-bundle: installed bundle '$b'. Run 'skill-bundle verify $b' to confirm."
+}
+
+case "${1:-}" in
+  list)              cmd_list ;;
+  verify)            [ $# -ge 2 ] || { usage; exit 1; }; cmd_verify "$2" ;;
+  install)           [ $# -ge 2 ] || { usage; exit 1; }; cmd_install "$2" ;;
+  -h|--help|"")      usage ;;
+  *)                 echo "skill-bundle: unknown command '$1'" >&2; usage; exit 1 ;;
+esac
