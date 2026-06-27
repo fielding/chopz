@@ -11,7 +11,7 @@ import path from "node:path";
 import { parseArgs } from "node:util";
 import { resolveManifest } from "../src/manifest.js";
 import { storeDir, linksFile, lockFile, pinsFile, installMember, storeSkills, isSafeSkillName } from "../src/store.js";
-import { listDeployments, agentDirsFromDeployments, discoverAgentSkillDirs, repoSkills } from "../src/agents.js";
+import { knownAgentSkillDirs, repoSkills } from "../src/agents.js";
 import { readRequires } from "../src/frontmatter.js";
 import * as commands from "../src/commands.js";
 import * as devlink from "../src/devlink.js";
@@ -204,19 +204,10 @@ async function main(argv) {
     const home = process.env.HOME || homedir();
     const ctx = {
       linksFile: linksFile(),
-      // Every place a skill can be deployed: the store, the dirs `skills list`
-      // reports, and the agent skills dirs discovered on disk. Deduped.
-      deployDirs: () => {
-        const deployments = listDeployments();
-        const known = deployments.map((d) => d.name);
-        return [
-          ...new Set([
-            storeDir(),
-            ...agentDirsFromDeployments(deployments),
-            ...discoverAgentSkillDirs(home, known),
-          ]),
-        ];
-      },
+      // Every place a skill can be deployed: the store plus the agent dirs from
+      // skills' known set that exist on disk. A fixed allowlist of hidden dirs,
+      // never a scan, so a source repo can never be a deploy target.
+      deployDirs: () => [...new Set([storeDir(), ...knownAgentSkillDirs(home)])],
       installCopy: (source, skill) => installMember(source, skill),
     };
     if (cmd === "sync") return devlink.sync(ctx);

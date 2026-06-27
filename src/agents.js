@@ -1,39 +1,15 @@
 // Deployment discovery and repo skill enumeration.
 //
-// chopz never hardcodes the ~50-entry agent->dir table that `skills` carries
-// internally; that would drift every time upstream adds an agent. Instead it
-// reads `skills list --json` (upstream's own, structured report of where every
-// skill is deployed) and derives the live agent dirs from those paths. This is
-// the wrap-don't-reimplement rule applied to dev linking.
+// Deploy targets come from a fixed allowlist (agent-dirs.js, mirrored from
+// skills' own agent table), not a scan of $HOME. Every entry is a hidden,
+// $HOME-relative dir, so a source repo (e.g. ~/src/hack/skills) can never be
+// mistaken for a deploy target. That is the data-loss bug made impossible.
 
 import { readdirSync, existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-
-// Run `npx skills list --json` from a neutral cwd and parse it. Returns the
-// array of { name, path, scope, agents } upstream reports, or throws with a
-// message fit to print. Injectable runner keeps this testable.
-export function listDeployments({ env = process.env, run = defaultRun } = {}) {
-  const home = env.HOME || homedir();
-  const { status, stdout, stderr } = run("npx", ["skills", "list", "--json"], {
-    cwd: home,
-    env,
-  });
-  if (status !== 0) {
-    throw new Error(`npx skills list --json exited ${status}: ${(stderr || "").trim()}`);
-  }
-  let parsed;
-  try {
-    parsed = JSON.parse(stdout);
-  } catch (err) {
-    throw new Error(`could not parse 'skills list --json' output: ${err.message}`);
-  }
-  if (!Array.isArray(parsed)) {
-    throw new Error(`'skills list --json' did not return an array`);
-  }
-  return parsed;
-}
+import { KNOWN_AGENT_SKILL_DIRS } from "./agent-dirs.js";
 
 // A two-minute ceiling so a stalled `npx`/`git` subprocess cannot hang the CLI
 // forever (upstream tree-fetches are known to wedge on flaky networks).
@@ -88,65 +64,15 @@ function stripAnsi(s) {
   return s.replace(new RegExp(`${ESC}\\[[0-9;?]*[a-zA-Z]`, "g"), "");
 }
 
-// The distinct agent skills directories currently in use, derived from where
-// skills are already deployed: each deployment path is <agentdir>/<name>, so
-// the agent dir is its parent. Deduplicated, sorted for stable output.
-export function agentDirsFromDeployments(deployments) {
-  const dirs = new Set();
-  for (const d of deployments) {
-    if (d && typeof d.path === "string" && d.path) dirs.add(path.dirname(d.path));
-  }
-  return [...dirs].sort();
-}
-
-// Discover the agent skills directories on this machine without the ~50-entry
-// agent->dir table upstream carries. `skills list --json` reports only the
-// canonical (store) path per skill, never the per-agent mirror dirs, and those
-// mirrors may be independent copies that each need their own symlink. So scan
-// for directories named "skills" under $HOME (a dot-dir deep, plus one nested
-// level for the likes of .config/<agent>/skills) and keep the ones that
-// actually hold an installed skill -- that membership test is what tells a real
-// agent mirror apart from some unrelated "skills" folder. `knownSkills` is the
-// set of currently-installed skill names. Returns absolute dirs, sorted.
-export function discoverAgentSkillDirs(homeDir, knownSkills, { readdir = readDirNames } = {}) {
-  const known = new Set(knownSkills);
-  const found = new Set();
-
-  const qualifies = (skillsDir) => readdir(skillsDir).some((e) => known.has(e));
-  const consider = (skillsDir) => {
-    if (qualifies(skillsDir)) found.add(skillsDir);
-  };
-
-  for (const top of readDirEntries(homeDir)) {
-    if (!top.isDirectory()) continue;
-    // Agent config lives in hidden dirs (~/.claude, ~/.codex, ~/.config/<x>,
-    // ~/.agents). Restricting to dotdirs keeps a source repo like
-    // ~/src/hack/skills, which is also a "skills" dir full of known skills, from
-    // being mistaken for a deploy target (which once made `link` self-destruct it).
-    if (!top.name.startsWith(".")) continue;
-    const base = path.join(homeDir, top.name);
-    consider(path.join(base, "skills"));
-    for (const sub of readDirEntries(base)) {
-      if (sub.isDirectory()) consider(path.join(base, sub.name, "skills"));
-    }
-  }
-  return [...found].sort();
-}
-
-function readDirNames(dir) {
-  try {
-    return readdirSync(dir);
-  } catch {
-    return [];
-  }
-}
-
-function readDirEntries(dir) {
-  try {
-    return readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return [];
-  }
+// The agent skills directories that exist on this machine, taken from skills'
+// own known set (agent-dirs.js) resolved against $HOME. Only these hidden,
+// $HOME-relative dirs are ever deploy targets, so a source repo can never be
+// one. Returns absolute dirs that exist, sorted. Injectable existence check for
+// tests.
+export function knownAgentSkillDirs(homeDir, { exists = existsSync } = {}) {
+  return KNOWN_AGENT_SKILL_DIRS.map((rel) => path.join(homeDir, rel))
+    .filter((dir) => exists(dir))
+    .sort();
 }
 
 // Enumerate the skills a repo provides. A skill is a directory holding a

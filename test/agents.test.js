@@ -4,14 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import {
-  listDeployments,
-  agentDirsFromDeployments,
-  discoverAgentSkillDirs,
-  parseRepoSkills,
-  repoSkills,
-  skillsInRepo,
-} from "../src/agents.js";
+import { knownAgentSkillDirs, parseRepoSkills, repoSkills, skillsInRepo } from "../src/agents.js";
 
 const ESC = String.fromCharCode(27);
 const BAR = "│";
@@ -39,70 +32,26 @@ function tmp() {
   return mkdtempSync(path.join(tmpdir(), "chopz-agents-"));
 }
 
-test("listDeployments parses `skills list --json` via the injected runner", () => {
-  const run = (cmd, args) => {
-    assert.deepEqual([cmd, ...args], ["npx", "skills", "list", "--json"]);
-    return {
-      status: 0,
-      stdout: JSON.stringify([
-        { name: "alpha", path: "/h/.claude/skills/alpha", agents: ["Claude Code"] },
-        { name: "alpha", path: "/h/.codex/skills/alpha", agents: ["Codex"] },
-      ]),
-      stderr: "",
-    };
-  };
-  const out = listDeployments({ env: { HOME: "/h" }, run });
-  assert.equal(out.length, 2);
-});
-
-test("listDeployments throws a clean error on non-zero exit", () => {
-  const run = () => ({ status: 1, stdout: "", stderr: "boom" });
-  assert.throws(() => listDeployments({ run }), /skills list --json exited 1: boom/);
-});
-
-test("listDeployments throws on non-JSON output", () => {
-  const run = () => ({ status: 0, stdout: "not json", stderr: "" });
-  assert.throws(() => listDeployments({ run }), /could not parse/);
-});
-
-test("agentDirsFromDeployments returns unique parent dirs, sorted", () => {
-  const deployments = [
-    { name: "alpha", path: "/h/.claude/skills/alpha" },
-    { name: "beta", path: "/h/.claude/skills/beta" },
-    { name: "alpha", path: "/h/.codex/skills/alpha" },
-  ];
-  assert.deepEqual(agentDirsFromDeployments(deployments), [
-    "/h/.claude/skills",
-    "/h/.codex/skills",
+test("knownAgentSkillDirs returns only known agent dirs that exist, never a source repo", () => {
+  const home = "/h";
+  // a few known agent dirs exist, plus a source repo that is NOT in the allowlist
+  const present = new Set([
+    path.join(home, ".claude/skills"),
+    path.join(home, ".codex/skills"),
+    path.join(home, ".config/crush/skills"),
+    path.join(home, "src/hack/skills"), // a source repo: not a known agent dir
   ]);
+  const dirs = knownAgentSkillDirs(home, { exists: (d) => present.has(d) });
+  assert.deepEqual(dirs, [
+    path.join(home, ".claude/skills"),
+    path.join(home, ".codex/skills"),
+    path.join(home, ".config/crush/skills"),
+  ]);
+  assert.ok(!dirs.includes(path.join(home, "src/hack/skills")), "a source repo is never a deploy target");
 });
 
-test("discoverAgentSkillDirs finds agent dirs holding a known skill, one and two levels deep, ignoring unrelated ones", () => {
-  const home = tmp();
-  try {
-    // real agent mirrors (contain the known skill 'alpha')
-    for (const rel of [".claude/skills", ".codex/skills", ".config/crush/skills"]) {
-      const d = path.join(home, rel);
-      mkdirSync(path.join(d, "alpha"), { recursive: true });
-    }
-    // a 'skills' dir that does NOT hold a known skill -> should be ignored
-    mkdirSync(path.join(home, "project/skills/unrelated"), { recursive: true });
-    // a deeper-than-scanned mirror -> not found (documents the bound)
-    mkdirSync(path.join(home, "a/b/c/skills/alpha"), { recursive: true });
-    // a SOURCE repo: a non-hidden 'skills' dir full of known skills. Must NOT be
-    // discovered as an agent dir (agent config lives in dotdirs). This is the
-    // data-loss regression: linking it once self-destructed it.
-    mkdirSync(path.join(home, "src/hack/skills/alpha"), { recursive: true });
-
-    const dirs = discoverAgentSkillDirs(home, ["alpha", "beta"]);
-    assert.deepEqual(dirs, [
-      path.join(home, ".claude/skills"),
-      path.join(home, ".codex/skills"),
-      path.join(home, ".config/crush/skills"),
-    ]);
-  } finally {
-    rmSync(home, { recursive: true, force: true });
-  }
+test("knownAgentSkillDirs returns [] when none of the known dirs exist", () => {
+  assert.deepEqual(knownAgentSkillDirs("/h", { exists: () => false }), []);
 });
 
 test("skillsInRepo finds subdirectories that contain a SKILL.md", () => {
