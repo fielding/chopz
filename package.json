@@ -1,6 +1,6 @@
 {
   "name": "@fielding/chopz",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A safety-first layer over the skills CLI: named bundles and safe same-repo dependency resolution for agent skills.",
   "type": "module",
   "bin": {
