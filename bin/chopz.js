@@ -17,6 +17,7 @@ import * as commands from "../src/commands.js";
 import * as devlink from "../src/devlink.js";
 import * as deps from "../src/deps.js";
 import { audit } from "../src/audit.js";
+import { restore } from "../src/restore.js";
 import { scanSkill } from "../src/scan.js";
 import * as integrity from "../src/integrity.js";
 
@@ -25,6 +26,7 @@ const IMPLEMENTED = {
   verify: "Check every member of a bundle is installed (non-zero exit if not).",
   install: "Install every member of a bundle, from each member's source repo.",
   add: "Install a skill from a source repo and its same-repo requires (allowlist-gated).",
+  restore: "Reinstall the whole global store from skills' lockfile, then pin each skill.",
   link: "Symlink a local repo's skills in for live editing (author loop).",
   unlink: "Undo a dev link; restore the copy install.",
   sync: "Re-deploy dev-linked skills as pinned copies (drop live links).",
@@ -169,6 +171,11 @@ async function main(argv) {
   if (cmd === "scan") {
     const [target] = rest;
     return scanCommand(target);
+  }
+
+  // --- restore: rebuild the global store from skills' lockfile (no manifest) ---
+  if (cmd === "restore") {
+    return restore({ lockFile: lockFile(), store: storeDir(), pin: pinOne });
   }
 
   // --- add: install a skill + its same-repo requires (no manifest needed) ---

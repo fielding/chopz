@@ -43,6 +43,10 @@ The full model is in [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md). The short v
 - **It pins what it installs.** chopz records a content hash of every skill at install
   and `audit` re-checks it, so a skill that changes on disk after the fact shows up as
   drifted instead of silently slipping past you.
+- **It rebuilds a machine from one file.** `chopz restore` reads skills' global lockfile
+  and reinstalls every skill from its recorded source, then pins each. skills itself only
+  restores a project lockfile, so this is the one command that brings the whole global
+  store back from scratch.
 - **It scans for the cheap attacks.** `chopz scan` flags hidden unicode, buried base64,
   pipe-to-shell, credential-path reads, and injection phrasing. Heuristic, not proof, it
   catches low-effort attacks and points your attention at the rest.
@@ -85,6 +89,7 @@ chopz list                 List bundles and their members.
 chopz verify <bundle>      Check a bundle's skills are all installed.
 chopz install <bundle>     Install a bundle's skills from their source repos.
 chopz add <source> -s <s>  Install a skill and its same-repo requires (cross-repo surfaced).
+chopz restore              Reinstall the whole global store from skills' lockfile, then pin each.
 chopz link <repo>          Symlink a local repo's skills in for live editing (author loop).
 chopz unlink <repo|skill>  Undo a dev link; restore the copy install.
 chopz sync                 Re-deploy dev-linked skills as pinned copies (drop live links).

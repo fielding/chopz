@@ -55,3 +55,12 @@ linking".
 - Trust tiers: auto-trust own repos + a vetted-author allowlist; else require review
   (THREAT-MODEL #5).
 - Surface `allowed-tools`; flag overbroad asks (THREAT-MODEL #6).
+
+## v5: whole-store restore (shipped)
+- `chopz restore` reads skills' global lockfile (`~/.agents/.skill-lock.json`) and
+  reinstalls every github-sourced skill from its recorded source, then pins each.
+- Fills a gap upstream leaves: `skills experimental_install` only restores a *project*
+  lockfile (`skills-lock.json` in cwd), never the global store.
+- Non-github entries (e.g. node_modules) are surfaced and skipped, never guessed at.
+- Acceptance: a fresh `~/.agents` clone plus `chopz restore` rebuilds the whole store;
+  `chopz audit` then reports every restored skill as pinned.
