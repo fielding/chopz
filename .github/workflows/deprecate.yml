@@ -1,0 +1,32 @@
+name: deprecate
+
+# Manually deprecate published versions on npm without handling a token
+# locally. Run it from the Actions tab or with:
+#   gh workflow run deprecate.yml -f spec='@fielding/chopz@<0.3.0' -f message='...'
+# An empty message un-deprecates the matched versions.
+#
+# Uses the same NPM_TOKEN secret as publish.yml: an automation token with
+# "publish" rights for @fielding/chopz and 2FA bypass (deprecate is a publish
+# operation; a runner cannot answer an OTP prompt).
+
+on:
+  workflow_dispatch:
+    inputs:
+      spec:
+        description: 'Package spec / semver range to deprecate (e.g. @fielding/chopz@<0.3.0)'
+        required: true
+      message:
+        description: 'Deprecation message (empty string un-deprecates)'
+        required: true
+
+jobs:
+  deprecate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - run: npm deprecate "${{ inputs.spec }}" "${{ inputs.message }}"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
