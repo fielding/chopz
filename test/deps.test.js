@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { add } from "../src/deps.js";
 
 // A fake repo: skills available in `source`, their requires, and an install log.
+// isInstalled mirrors the fake install, so a skill "lands" iff installSkill ran.
 function fakeCtx(repo, requires = {}) {
   const installed = [];
   const out = [];
@@ -13,6 +14,7 @@ function fakeCtx(repo, requires = {}) {
     installSkill: async (_source, name) => {
       installed.push(name);
     },
+    isInstalled: (name) => installed.includes(name),
     readRequires: (name) => requires[name] || [],
     out: (s = "") => out.push(s),
     err: (s = "") => err.push(s),
@@ -92,6 +94,7 @@ test("errors and stops when an install fails", async () => {
     installSkill: async (_s, name) => {
       if (name === "gate") throw new Error("network");
     },
+    isInstalled: () => true,
     readRequires: () => [],
     out: (s) => out.push(s),
     err: (s) => err.push(s),
@@ -99,4 +102,28 @@ test("errors and stops when an install fails", async () => {
   const code = await add(ctx, "fielding/skills", "gate");
   assert.equal(code, 1);
   assert.match(err.join("\n"), /failed to install gate.*network/);
+});
+
+test("errors when an install reports success but the skill never lands, and does not pin it", async () => {
+  // `skills add` exits 0 even on a failed install; the store is the truth.
+  const pinned = [];
+  const { ctx, err } = fakeCtx(["gate"]);
+  ctx.installSkill = async () => {}; // "succeeds" but lands nothing
+  ctx.isInstalled = () => false;
+  ctx.pin = (name, source) => pinned.push([name, source]);
+  const code = await add(ctx, "fielding/skills", "gate");
+  assert.equal(code, 1);
+  assert.match(err.join("\n"), /gate did not land in the store/);
+  assert.equal(pinned.length, 0, "never pin a skill that did not land");
+});
+
+test("a pin failure warns but does not fail the add", async () => {
+  const { ctx, installed, err } = fakeCtx(["gate"]);
+  ctx.pin = () => {
+    throw new Error("EACCES pins file");
+  };
+  const code = await add(ctx, "fielding/skills", "gate");
+  assert.equal(code, 0); // the skill IS installed
+  assert.deepEqual(installed, ["gate"]);
+  assert.match(err.join("\n"), /warning: could not pin gate.*EACCES/);
 });

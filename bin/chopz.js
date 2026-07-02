@@ -10,7 +10,16 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { resolveManifest } from "../src/manifest.js";
-import { storeDir, linksFile, lockFile, pinsFile, installMember, storeSkills, isSafeSkillName } from "../src/store.js";
+import {
+  storeDir,
+  linksFile,
+  lockFile,
+  pinsFile,
+  installSkill,
+  isInstalled as storeIsInstalled,
+  storeSkills,
+  isSafeSkillName,
+} from "../src/store.js";
 import { knownAgentSkillDirs, repoSkills } from "../src/agents.js";
 import { readRequires } from "../src/frontmatter.js";
 import * as commands from "../src/commands.js";
@@ -34,7 +43,14 @@ const IMPLEMENTED = {
   audit: "Report installed skills, sources, dev-linked state, and hash drift.",
 };
 
-const VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+// chopz's own version, display-only: a corrupted install should show
+// "(unknown)" in --version, not crash every command at module load.
+let VERSION;
+try {
+  VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version || "(unknown)";
+} catch {
+  VERSION = "(unknown)";
+}
 
 // Pin an installed skill to a content hash chopz records (THREAT-MODEL #2).
 function pinOne(skill, source) {
@@ -199,7 +215,8 @@ async function main(argv) {
     }
     const ctx = {
       repoSkills: (src) => repoSkills(src),
-      installSkill: (src, name) => installMember(src, name),
+      installSkill,
+      isInstalled: (name) => storeIsInstalled(storeDir(), name),
       readRequires: (name) => readRequires(path.join(storeDir(), name, "SKILL.md")),
       pin: pinOne,
     };
@@ -215,7 +232,7 @@ async function main(argv) {
       // skills' known set that exist on disk. A fixed allowlist of hidden dirs,
       // never a scan, so a source repo can never be a deploy target.
       deployDirs: () => [...new Set([storeDir(), ...knownAgentSkillDirs(home)])],
-      installCopy: (source, skill) => installMember(source, skill),
+      installSkill,
     };
     if (cmd === "sync") return devlink.sync(ctx);
 
@@ -253,7 +270,10 @@ async function main(argv) {
   if (cmd === "verify") return commands.verify(ctx, name);
   if (cmd === "install") return commands.install(ctx, name);
 
-  return 1;
+  // Every command in IMPLEMENTED is handled above; anything else was forwarded
+  // to skills. Reaching here means a verb was added to the table without a
+  // handler -- fail loud so the gap surfaces instead of a silent exit 1.
+  throw new Error(`internal error: command '${cmd}' is listed in IMPLEMENTED but has no handler`);
 }
 
 main(process.argv.slice(2)).then(

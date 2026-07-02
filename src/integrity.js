@@ -12,9 +12,9 @@
 // "it changed after I installed it" case, which is the core of the threat.
 
 import { createHash } from "node:crypto";
-import { readFileSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
-import { walkFiles } from "./walk.js";
+import { walkFiles, writeJson } from "./walk.js";
 
 const PINS_VERSION = 1;
 
@@ -49,16 +49,11 @@ export function loadPins(file) {
   return data;
 }
 
-function savePins(file, state) {
-  mkdirSync(path.dirname(file), { recursive: true });
-  writeFileSync(file, `${JSON.stringify(state, null, 2)}\n`);
-}
-
 // Pin a skill to the current hash of its installed folder.
 export function pin(file, skill, dir, source, now = () => new Date().toISOString()) {
   const state = loadPins(file);
   state.pins[skill] = { hash: hashSkillFolder(dir), source, pinnedAt: now() };
-  savePins(file, state);
+  writeJson(file, state);
   return state.pins[skill].hash;
 }
 

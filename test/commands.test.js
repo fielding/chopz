@@ -80,8 +80,8 @@ test("verify on an unknown bundle exits 1 with the bundle list", () => {
 
 test("install calls the installer for each member from the bundle", async () => {
   const calls = [];
-  const installMember = async (source, skill) => calls.push([source, skill]);
-  const { ctx, out } = fakeCtx({ installMember });
+  const installSkill = async (source, skill) => calls.push([source, skill]);
+  const { ctx, out } = fakeCtx({ installSkill });
   const code = await install(ctx, "gate");
   assert.equal(code, 0);
   assert.deepEqual(calls, [
@@ -93,11 +93,11 @@ test("install calls the installer for each member from the bundle", async () => 
 
 test("install reports per-member failure and exits 1, continuing the rest", async () => {
   const calls = [];
-  const installMember = async (_source, skill) => {
+  const installSkill = async (_source, skill) => {
     calls.push(skill);
     if (skill === "gate") throw new Error("boom");
   };
-  const { ctx, err } = fakeCtx({ installMember });
+  const { ctx, err } = fakeCtx({ installSkill });
   const code = await install(ctx, "gate");
   assert.equal(code, 1);
   assert.deepEqual(calls, ["gate", "atomic-changes"]); // did not abort early
@@ -107,11 +107,11 @@ test("install reports per-member failure and exits 1, continuing the rest", asyn
 });
 
 test("install treats a skill that did not land in the store as failed, despite a clean install call", async () => {
-  // installMember resolves for both (skills exits 0), but gate never appears in
+  // installSkill resolves for both (skills exits 0), but gate never appears in
   // the store -- chopz must catch that instead of trusting the exit code.
-  const installMember = async () => {};
+  const installSkill = async () => {};
   const isInstalled = (_store, skill) => skill !== "gate";
-  const { ctx, out, err } = fakeCtx({ installMember, isInstalled });
+  const { ctx, out, err } = fakeCtx({ installSkill, isInstalled });
   const code = await install(ctx, "gate");
   assert.equal(code, 1);
   assert.match(err.join("\n"), /gate did not land in the store/);
@@ -120,8 +120,19 @@ test("install treats a skill that did not land in the store as failed, despite a
 });
 
 test("install on an unknown bundle exits 1", async () => {
-  const { ctx, err } = fakeCtx({ installMember: async () => {} });
+  const { ctx, err } = fakeCtx({ installSkill: async () => {} });
   const code = await install(ctx, "nope");
   assert.equal(code, 1);
   assert.match(err.join("\n"), /unknown bundle "nope"/);
+});
+
+test("a pin failure warns but does not fail the install", async () => {
+  const pin = () => {
+    throw new Error("EACCES pins file");
+  };
+  const { ctx, out, err } = fakeCtx({ installSkill: async () => {}, pin });
+  const code = await install(ctx, "gate");
+  assert.equal(code, 0); // both members ARE in the store
+  assert.match(out.join("\n"), /installed bundle 'gate'/);
+  assert.match(err.join("\n"), /warning: could not pin gate.*EACCES/);
 });

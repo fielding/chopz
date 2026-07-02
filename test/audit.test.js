@@ -196,6 +196,29 @@ test("handles a missing lockfile gracefully", () => {
   }
 });
 
+test("rejects a lockfile that parses to null instead of crashing", () => {
+  // Valid JSON, wrong shape: `null` has no .skills and must fail loud, not TypeError.
+  const w = scene({ lock: null, links: { version: 1, links: {} }, store: {} });
+  try {
+    const code = audit(w.ctx);
+    assert.equal(code, 1);
+    assert.match(w.err.join("\n"), /malformed \(not an object\)/);
+  } finally {
+    rmSync(w.root, { recursive: true, force: true });
+  }
+});
+
+test("treats a lockfile whose skills field is not an object as empty", () => {
+  const w = scene({ lock: { version: 3, skills: "nope" }, links: { version: 1, links: {} }, store: {} });
+  try {
+    const code = audit(w.ctx);
+    assert.equal(code, 0);
+    assert.match(w.out.join("\n"), /No skills installed/);
+  } finally {
+    rmSync(w.root, { recursive: true, force: true });
+  }
+});
+
 test("ignores dotfiles in the store", () => {
   const w = scene({
     lock: { version: 3, skills: { gate: { source: "fielding/skills" } } },

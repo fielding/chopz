@@ -10,6 +10,7 @@
 //   ctx = {
 //     repoSkills(source),          -> string[]   skills available in the repo
 //     installSkill(source, name),  async; `npx skills add <source> -s <name>`
+//     isInstalled(name),           -> boolean    is the skill present in the store?
 //     readRequires(name),          -> string[]   requires from the installed SKILL.md
 //     out(line), err(line),
 //   }
@@ -25,7 +26,7 @@ function defaults(ctx) {
 
 export async function add(ctx, source, skill) {
   const c = defaults(ctx);
-  const { repoSkills, installSkill, readRequires, out, err } = c;
+  const { repoSkills, installSkill, isInstalled, readRequires, out, err } = c;
 
   let inRepo;
   try {
@@ -52,8 +53,21 @@ export async function add(ctx, source, skill) {
       err(`chopz: failed to install ${name} from ${source}: ${e.message}`);
       return 1;
     }
+    // `skills add` exits 0 even when it fails to install, so confirm the skill
+    // actually landed in the store before pinning it or reading its requires
+    // (same rule as install and restore).
+    if (!isInstalled(name)) {
+      err(`chopz: ${name} did not land in the store after install.`);
+      return 1;
+    }
     installed.push(name);
-    c.pin(name, source);
+    // A pin failure must not fail the add: the skill IS installed. Warn so the
+    // operator knows audit will report it as unpinned.
+    try {
+      c.pin(name, source);
+    } catch (e) {
+      err(`chopz: warning: could not pin ${name}: ${e.message}. 'chopz audit' will show it unpinned.`);
+    }
     out(`  installed ${name}  [${source}]`);
 
     for (const req of readRequires(name)) {

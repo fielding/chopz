@@ -10,7 +10,7 @@ function tmp() {
   return mkdtempSync(path.join(tmpdir(), "chopz-restore-"));
 }
 
-// A fake world over an injected lockfile. installCopy records calls and (by
+// A fake world over an injected lockfile. installSkill records calls and (by
 // default) "lands" the skill so the presence check passes; pin records pins.
 function world(lock) {
   const root = tmp();
@@ -24,7 +24,7 @@ function world(lock) {
   const ctx = {
     lockFile,
     store: path.join(root, "store"),
-    installMember: async (source, skill) => {
+    installSkill: async (source, skill) => {
       installed.push([source, skill]);
       landed.add(skill);
     },
@@ -122,8 +122,8 @@ test("restore reports a skill that installs but never lands in the store, and ex
     version: 3,
     skills: { ghost: { source: "x/y", sourceType: "github" } },
   });
-  // installMember "succeeds" but the skill never lands
-  w.ctx.installMember = async () => {};
+  // installSkill "succeeds" but the skill never lands
+  w.ctx.installSkill = async () => {};
   w.ctx.isInstalled = () => false;
   try {
     const code = await restore(w.ctx);
@@ -140,7 +140,7 @@ test("restore exits 1 and pins nothing when an install errors", async () => {
     version: 3,
     skills: { gate: { source: "fielding/skills", sourceType: "github" } },
   });
-  w.ctx.installMember = async () => {
+  w.ctx.installSkill = async () => {
     throw new Error("npx skills add exited 1");
   };
   try {
@@ -148,6 +148,24 @@ test("restore exits 1 and pins nothing when an install errors", async () => {
     assert.equal(code, 1);
     assert.match(w.err.join("\n"), /gate install errored/);
     assert.equal(w.pinned.length, 0);
+  } finally {
+    cleanup(w);
+  }
+});
+
+test("a pin failure warns but does not fail the restore", async () => {
+  const w = world({
+    version: 3,
+    skills: { gate: { source: "fielding/skills", sourceType: "github" } },
+  });
+  w.ctx.pin = () => {
+    throw new Error("EACCES pins file");
+  };
+  try {
+    const code = await restore(w.ctx);
+    assert.equal(code, 0); // the skill IS in the store
+    assert.deepEqual(w.installed, [["fielding/skills", "gate"]]);
+    assert.match(w.err.join("\n"), /warning: could not pin gate.*EACCES/);
   } finally {
     cleanup(w);
   }

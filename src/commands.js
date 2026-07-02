@@ -10,17 +10,17 @@
 //     manifestFile,                   where it came from (for messages)
 //     store,                          store dir
 //     isInstalled(store, skill),      presence check         (default: store.js)
-//     installMember(source, skill),   async install one      (default: store.js)
+//     installSkill(source, skill),   async install one      (default: store.js)
 //     out(line), err(line),           output sinks           (default: console)
 //   }
 
 import { getBundle, bundleNames } from "./manifest.js";
-import { isInstalled as storeIsInstalled, installMember as storeInstallMember, addCommandLine } from "./store.js";
+import { isInstalled as storeIsInstalled, installSkill as storeInstallSkill, addCommandLine } from "./store.js";
 
 function defaults(ctx) {
   return {
     isInstalled: storeIsInstalled,
-    installMember: (source, skill) => storeInstallMember(source, skill),
+    installSkill: (source, skill) => storeInstallSkill(source, skill),
     pin: () => {}, // pin the installed skill to a content hash; no-op unless wired
     out: (s = "") => console.log(s),
     err: (s = "") => console.error(s),
@@ -79,7 +79,7 @@ export function verify(ctx, name) {
 
 export async function install(ctx, name) {
   const c = defaults(ctx);
-  const { manifest, store, installMember, isInstalled, out, err } = c;
+  const { manifest, store, installSkill, isInstalled, out, err } = c;
 
   let bundle;
   try {
@@ -93,7 +93,7 @@ export async function install(ctx, name) {
   for (const m of bundle.members) {
     out(`==> ${m.skill} (${m.source})`);
     try {
-      await installMember(m.source, m.skill);
+      await installSkill(m.source, m.skill);
     } catch (e) {
       err(`chopz: ${m.skill} install errored: ${e.message}`);
       failed += 1;
@@ -103,7 +103,13 @@ export async function install(ctx, name) {
     // "Failed to install 1"), so do not trust the exit code. Confirm the skill
     // actually landed in the store before calling it installed.
     if (isInstalled(store, m.skill)) {
-      c.pin(m.skill, m.source);
+      // A pin failure must not fail the install: the skill IS in the store.
+      // Warn so the operator knows audit will report it as unpinned.
+      try {
+        c.pin(m.skill, m.source);
+      } catch (e) {
+        err(`chopz: warning: could not pin ${m.skill}: ${e.message}. 'chopz audit' will show it unpinned.`);
+      }
       out(`  ok      ${m.skill}`);
     } else {
       err(`chopz: ${m.skill} did not land in the store (${store}) after install.`);

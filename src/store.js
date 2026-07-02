@@ -93,7 +93,7 @@ const INSTALL_TIMEOUT_MS = 300000;
 // Install one member by shelling out to `npx skills add`. Runs from a neutral
 // cwd ($HOME): running inside ~/.agents nests a bogus ~/.agents/.agents/skills/
 // (a known upstream gotcha, AGENTS.md). Resolves on exit 0, rejects otherwise.
-export function installMember(source, skill, { env = process.env, cwd, timeout = INSTALL_TIMEOUT_MS } = {}) {
+export function installSkill(source, skill, { env = process.env, cwd, timeout = INSTALL_TIMEOUT_MS } = {}) {
   const home = env.HOME || homedir();
   return new Promise((resolve, reject) => {
     const child = spawn("npx", addArgs(source, skill), {

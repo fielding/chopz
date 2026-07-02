@@ -12,15 +12,15 @@
 //   ctx = {
 //     linksFile,                where the dev-link record lives
 //     deployDirs(),             -> [dir]  the store + every agent skills dir
-//     installCopy(repo, name),  async; lay/restore a copy via `npx skills add`
+//     installSkill(repo, name),  async; lay/restore a copy via `npx skills add`
 //     now(),                    -> ISO timestamp (injectable for tests)
 //     out(line), err(line),
 //   }
 
-import { readlinkSync, rmSync, symlinkSync, mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readlinkSync, rmSync, symlinkSync, mkdirSync, readFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { skillsInRepo } from "./agents.js";
-import { pathType } from "./walk.js";
+import { pathType, writeJson } from "./walk.js";
 
 const LINKS_VERSION = 1;
 
@@ -49,11 +49,6 @@ export function loadLinks(file) {
   return data;
 }
 
-function saveLinks(file, state) {
-  mkdirSync(path.dirname(file), { recursive: true });
-  writeFileSync(file, `${JSON.stringify(state, null, 2)}\n`);
-}
-
 // --- filesystem primitives -------------------------------------------------
 
 // Make `p` a symlink to `target`, replacing whatever is there. Returns
@@ -69,7 +64,15 @@ export function ensureSymlink(target, p) {
   if (t === "dir") rmSync(p, { recursive: true, force: true });
   else if (t !== "absent") rmSync(p, { force: true });
   mkdirSync(path.dirname(p), { recursive: true });
-  symlinkSync(target, p);
+  try {
+    symlinkSync(target, p);
+  } catch (e) {
+    // TOCTOU: something recreated p between the check and the link. Clear it
+    // and retry once; a second failure is a real error and propagates.
+    if (e.code !== "EEXIST") throw e;
+    rmSync(p, { recursive: true, force: true });
+    symlinkSync(target, p);
+  }
   return "linked";
 }
 
@@ -85,7 +88,7 @@ function safeReadlink(p) {
 
 export async function link(ctx, repoPath) {
   const c = defaults(ctx);
-  const { deployDirs, installCopy, linksFile, now, out, err } = c;
+  const { deployDirs, installSkill, linksFile, now, out, err } = c;
 
   let skills;
   try {
@@ -127,7 +130,7 @@ export async function link(ctx, repoPath) {
     if (locations.length === 0) {
       out(`chopz: ${name} not installed yet; installing once so it can be linked.`);
       try {
-        await installCopy(repo, name);
+        await installSkill(repo, name);
         dirs = deployLocations();
       } catch (e) {
         err(`chopz: could not install ${name} to link it: ${e.message}`);
@@ -150,7 +153,7 @@ export async function link(ctx, repoPath) {
     out(`  linked ${name}  ->  ${dir}  (${paths.length} location(s))`);
   }
 
-  saveLinks(linksFile, state);
+  writeJson(linksFile, state);
   out(`chopz: dev-linked ${skills.length} skill(s) from ${repo}. Edits are now live; 'chopz audit' lists them as live/unpinned.`);
   return 0;
 }
@@ -179,7 +182,7 @@ export async function unlink(ctx, target) {
   }
 
   const failed = await restoreEach(c, state, names);
-  saveLinks(linksFile, state);
+  writeJson(linksFile, state);
   if (failed > 0) {
     err(`chopz: ${failed} skill(s) could not be unlinked (left linked). ${names.length - failed} restored.`);
     return 1;
@@ -206,7 +209,7 @@ export async function sync(ctx) {
   }
 
   const failed = await restoreEach(c, state, names);
-  saveLinks(linksFile, state);
+  writeJson(linksFile, state);
   if (failed > 0) {
     err(`chopz: ${failed} skill(s) could not be synced (left linked). ${names.length - failed} synced.`);
     return 1;
@@ -236,13 +239,27 @@ async function restoreEach(c, state, names) {
 // the skill is never left missing, and the record is kept. Shared by unlink and
 // sync.
 async function restoreCopy(c, state, name) {
-  const { installCopy, out } = c;
+  const { installSkill, deployDirs, out, err } = c;
   const record = state.links[name];
-  const linked = (record.paths || []).filter((p) => pathType(p) === "symlink");
+  const recorded = Array.isArray(record.paths) ? record.paths : [];
+
+  // The links file is chopz's own state, but never trust it with rm: only a
+  // recorded path inside a known deploy dir is removable. A corrupted or
+  // tampered record must not be able to aim rmSync anywhere else; foreign
+  // paths are surfaced and left alone.
+  const allowed = deployDirs().map((d) => path.resolve(d));
+  const inDeployDir = (p) => {
+    const r = path.resolve(p);
+    return allowed.some((d) => r.startsWith(d + path.sep));
+  };
+  for (const p of recorded.filter((p) => !inDeployDir(p))) {
+    err(`chopz: ${name}: recorded path ${p} is not under a known deploy dir; leaving it alone.`);
+  }
+  const linked = recorded.filter((p) => inDeployDir(p) && pathType(p) === "symlink");
 
   for (const p of linked) rmSync(p, { force: true });
   try {
-    await installCopy(record.repo, name);
+    await installSkill(record.repo, name);
   } catch (e) {
     for (const p of linked) ensureSymlink(record.source, p); // roll back
     throw new Error(`could not restore copy for ${name}: ${e.message} (left linked)`);

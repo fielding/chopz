@@ -4,3 +4,5 @@ node_modules/
 .chopz/
 .npmrc
 .env
+coverage/
+.antislop/

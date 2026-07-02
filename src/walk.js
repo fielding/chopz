@@ -7,10 +7,18 @@
 // problem on a subdirectory) is THROWN, never swallowed: a tool that walks a
 // skill must not quietly skip files it could not read and then report "clean".
 
-import { readdirSync, lstatSync } from "node:fs";
+import { readdirSync, lstatSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 const SKIP = new Set([".git", ".DS_Store"]);
+
+// Write a JSON state file: pretty-printed with a trailing newline, creating the
+// parent directory. The dev-link record and the pin record both use it so their
+// on-disk shape cannot drift.
+export function writeJson(file, value) {
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
+}
 
 // Classify a path without following symlinks: "symlink", "dir", "file", or
 // "absent". Shared by dev linking and audit.

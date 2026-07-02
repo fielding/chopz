@@ -42,11 +42,17 @@ export function audit(ctx) {
       err(`chopz: cannot read lock ${lockFile}: ${e.message}`);
       return 1;
     }
+    // Valid JSON that is not an object (e.g. `null`) is a corrupt lock, not an
+    // empty one: fail loud like the parse-error branch (restore has the same rule).
+    if (!obj(lock)) {
+      err(`chopz: lock ${lockFile} is malformed (not an object).`);
+      return 1;
+    }
   } else {
     out(`chopz: no lock at ${lockFile}; nothing installed through skills yet.`);
   }
 
-  const skills = lock.skills || {};
+  const skills = obj(lock.skills) || {};
   let links, pins;
   try {
     links = loadLinks(linksFile).links;

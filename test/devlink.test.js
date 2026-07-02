@@ -1,6 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, lstatSync, readlinkSync, readFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  rmSync,
+  lstatSync,
+  readlinkSync,
+  readFileSync,
+  symlinkSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -13,7 +22,7 @@ function tmp() {
 
 // Build a fake world: a source repo with skills, a store dir, and N agent dirs
 // each holding a plain-copy of every skill. Returns the pieces plus a ctx whose
-// listDeployments/installCopy are fakes over this world.
+// listDeployments/installSkill are fakes over this world.
 function world(skillNames = ["alpha", "beta"], agentDirs = ["claude", "codex"]) {
   const root = tmp();
   const repo = path.join(root, "repo");
@@ -49,7 +58,7 @@ function world(skillNames = ["alpha", "beta"], agentDirs = ["claude", "codex"]) 
     linksFile,
     now: () => "2026-06-26T00:00:00.000Z",
     deployDirs: () => allDirs,
-    installCopy: async (repoArg, name) => {
+    installSkill: async (repoArg, name) => {
       installed.push([repoArg, name]);
       // simulate skills laying a fresh copy back into each agent dir
       for (const d of agents) {
@@ -176,7 +185,7 @@ test("unlink by skill name removes the symlinks, restores a copy, clears the rec
     const code = await unlink(w.ctx, "alpha");
     assert.equal(code, 0);
 
-    // alpha restored to copies (installCopy called with the repo + name)
+    // alpha restored to copies (installSkill called with the repo + name)
     assert.deepEqual(w.installed, [[path.resolve(w.repo), "alpha"]]);
     for (const d of w.agents) {
       const p = path.join(d, "alpha");
@@ -237,7 +246,7 @@ test("unlink rolls back to the symlink and keeps the record when restore fails",
   try {
     await link(w.ctx, w.repo);
     // make the copy-restore fail
-    w.ctx.installCopy = async () => {
+    w.ctx.installSkill = async () => {
       throw new Error("npx skills add exited 1");
     };
     const code = await unlink(w.ctx, "alpha");
@@ -251,6 +260,28 @@ test("unlink rolls back to the symlink and keeps the record when restore fails",
       assert.equal(readlinkSync(path.join(d, "alpha")), src);
     }
     assert.deepEqual(Object.keys(loadLinks(w.linksFile).links), ["alpha"]);
+  } finally {
+    rmSync(w.root, { recursive: true, force: true });
+  }
+});
+
+test("unlink never removes a recorded path outside the known deploy dirs", async () => {
+  const w = world(["alpha"], ["claude"]);
+  try {
+    await link(w.ctx, w.repo);
+    // Tamper: add a path outside every deploy dir to the record, pointing at a
+    // real symlink (the shape a corrupted links file could take to aim rm at
+    // arbitrary paths).
+    const decoy = path.join(w.root, "decoy");
+    symlinkSync(path.join(w.repo, "alpha"), decoy);
+    const state = loadLinks(w.linksFile);
+    state.links.alpha.paths.push(decoy);
+    writeFileSync(w.linksFile, JSON.stringify(state, null, 2));
+
+    const code = await unlink(w.ctx, "alpha");
+    assert.equal(code, 0);
+    assert.equal(pathType(decoy), "symlink", "foreign path must be left alone");
+    assert.match(w.err.join("\n"), /not under a known deploy dir/);
   } finally {
     rmSync(w.root, { recursive: true, force: true });
   }
@@ -277,7 +308,7 @@ test("link on a repo with no skills exits 1", async () => {
     const ctx = {
       linksFile: path.join(root, "links.json"),
       deployDirs: () => [],
-      installCopy: async () => {},
+      installSkill: async () => {},
       out: (s) => out.push(s),
       err: (s) => err.push(s),
     };
